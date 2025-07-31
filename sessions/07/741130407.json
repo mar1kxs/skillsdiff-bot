@@ -1,4 +1,10 @@
 {
 	"lastQuestions": {},
-	"answerMeta": null
+	"answerMeta": null,
+	"waitingForSupport": {
+		"userId": 741130407,
+		"userName": "mwiwiqo",
+		"messageId": 1512,
+		"supportMessageId": 222
+	}
 }

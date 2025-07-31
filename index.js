@@ -13,7 +13,6 @@ const {
 } = require("@grammyjs/conversations");
 const { FileAdapter } = require("@grammyjs/storage-file");
 
-// Constants
 const CONFIG = {
   GROUP_ID: -1002447226535,
   ADMINS: [741130407, 1914761214],
@@ -25,6 +24,7 @@ const CONFIG = {
         { key: "rank", text: "Какой у тебя ранг в Valorant?" },
         { key: "agents", text: "На каких агентах играешь?" },
         { key: "goals", text: "Какие цели и ожидания от тренировок?" },
+        { key: "email", text: "Какой email ты использовал при оплате?" },
       ],
     },
     DOTA: {
@@ -37,21 +37,20 @@ const CONFIG = {
           text: "На какой позиции играешь?\nИ какие персонажи интересуют?",
         },
         { key: "goals", text: "Какие цели и ожидания от тренировок?" },
+        { key: "email", text: "Какой email ты использовал при оплате?" },
       ],
     },
   },
-  DIALOG_TIMEOUT: 30 * 60 * 1000, // 30 minutes
-  CLEANUP_INTERVAL: 5 * 60 * 1000, // 5 minutes
+  DIALOG_TIMEOUT: 30 * 60 * 1000,
+  CLEANUP_INTERVAL: 5 * 60 * 1000,
 };
 
-// Dialog Manager Class Definition
 class DialogManager {
   constructor() {
     this.activeDialogs = new Map();
     this.initCleanupInterval();
   }
 
-  // Private utility method for ID validation
   #validateUserId(userId) {
     return typeof userId === "string" && /^\d+$/.test(userId);
   }
@@ -550,7 +549,7 @@ function createBot() {
   bot.callbackQuery("answer-2", async (ctx) => {
     ctx.answerCallbackQuery();
     ctx.reply(
-      'После оплаты вам нужно зайти в этого бота и нажать кнопку "Я оплатил услугу"\nЗаполнить небольшую анкету и позже свами свяжется тренер! ',
+      'После оплаты вам нужно зайти в этого бота и нажать кнопку "Я оплатил услугу"\nЗаполнить небольшую анкету и позже свами свяжется тренер\\! ',
       {
         parse_mode: "MarkdownV2",
       }
