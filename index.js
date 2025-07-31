@@ -16,6 +16,7 @@ const { FileAdapter } = require("@grammyjs/storage-file");
 // Constants
 const CONFIG = {
   GROUP_ID: -1002447226535,
+  ADMINS: [741130407, 1914761214],
   GAMES: {
     VALORANT: {
       name: "valorantConversation",
@@ -161,6 +162,15 @@ function createGameConversation(gameName, gameConfig) {
   return conversationHandler;
 }
 
+function isAdmin(id) {
+  return CONFIG.ADMINS.includes(Number(id));
+}
+
+const fileSendSessions = new Map();
+const adminMenu = new InlineKeyboard()
+  .text("📤 Отправить файл пользователю", "admin_sendfile")
+  .text("❌ Отменить отправку", "admin_cancel");
+
 const startKeyboard = new Keyboard()
   .text("Хочу задать вопрос")
   .row()
@@ -285,6 +295,54 @@ function createBot() {
         .text("Да", "start-conv")
         .text("Нет", "cancel"),
     });
+  });
+
+  //! ADMIN
+  bot.command("admin", async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+      return ctx.reply("⛔ У вас нет доступа.");
+    }
+
+    await ctx.reply("🛠 Админ-панель", {
+      reply_markup: adminMenu,
+    });
+  });
+
+  bot.callbackQuery("admin_sendfile", async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+      return ctx.answerCallbackQuery({
+        text: "⛔ У вас нет доступа.",
+        show_alert: true,
+      });
+    }
+
+    fileSendSessions.set(ctx.from.id, { step: "awaitingUserId" });
+    await ctx.answerCallbackQuery();
+    await ctx.reply("Введите ID пользователя, которому нужно отправить файл:");
+  });
+
+  bot.callbackQuery("admin_cancel", async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+      return ctx.answerCallbackQuery({
+        text: "⛔ У вас нет доступа.",
+        show_alert: true,
+      });
+    }
+
+    if (fileSendSessions.has(ctx.from.id)) {
+      fileSendSessions.delete(ctx.from.id);
+      await ctx.answerCallbackQuery({
+        text: "❌ Отправка отменена.",
+        show_alert: false,
+      });
+      await ctx.reply("Отправка файла отменена.");
+    } else {
+      await ctx.answerCallbackQuery({
+        text: "Нет активной отправки.",
+        show_alert: false,
+      });
+      await ctx.reply("Сейчас нет активной отправки.");
+    }
   });
 
   //! CallBack
@@ -528,16 +586,39 @@ function createBot() {
 
   bot.callbackQuery("answer-6", async (ctx) => {
     ctx.answerCallbackQuery();
-    ctx.reply("Если вы хотите стать тренером пишите @kihqy", {
-      parse_mode: "MarkdownV2",
-    });
+    ctx.reply(
+      "Если вы хотите стать тренером заполните форму на [SkillsDiff](https://www.skillsdiff.com)",
+      {
+        parse_mode: "MarkdownV2",
+      }
+    );
   });
 
   bot.on("message:text", async (ctx) => {
+    const adminId = ctx.from.id;
+
+    // Если это админ и он в сессии отправки файла
+    if (fileSendSessions.has(adminId)) {
+      const session = fileSendSessions.get(adminId);
+
+      if (session.step === "awaitingUserId") {
+        const userId = ctx.message.text.trim();
+        if (!/^\d+$/.test(userId)) {
+          return ctx.reply("❗ Введите корректный числовой ID.");
+        }
+        session.userId = userId;
+        session.step = "awaitingFile";
+        return ctx.reply(
+          "Отправьте файл, который нужно передать пользователю."
+        );
+      }
+    }
+
+    // ➡️ Если это не админская сессия, идём в основной код
+
     const senderId = String(ctx.from.id);
     const text = ctx.message.text;
 
-    // Игнорируем служебные сообщения
     if (
       text.startsWith("/") ||
       text === "Покинуть диалог" ||
@@ -547,16 +628,14 @@ function createBot() {
       return;
     }
 
-    // Определяем роль отправителя и получаем диалог
     const participantRole = dialogManager.getDialogParticipant(senderId);
     if (!participantRole) {
-      return; // Нет активного диалога
+      return;
     }
 
     let dialog;
     if (participantRole === "user") {
       dialog = dialogManager.getDialogByUser(senderId);
-      // Отправляем сообщение админу
       try {
         await ctx.api.sendMessage(
           dialog.adminId,
@@ -567,17 +646,60 @@ function createBot() {
       } catch (error) {
         console.error("Error sending message to admin:", error);
         await ctx.reply("⚠️ Ошибка при отправке сообщения");
-        dialogManager.close(senderId); // Close dialog on error
+        dialogManager.close(senderId);
       }
     } else if (participantRole === "admin") {
       dialog = dialogManager.getDialogByAdmin(senderId);
-      // Отправляем сообщение пользователю
       try {
         await ctx.api.sendMessage(dialog.userId, text);
       } catch (error) {
         console.error("Error sending message to user:", error);
         await ctx.reply("⚠️ Ошибка при отправке сообщения");
-        dialogManager.close(dialog.userId); // Close dialog on error
+        dialogManager.close(dialog.userId);
+      }
+    }
+  });
+
+  bot.on("message:document", async (ctx) => {
+    const adminId = ctx.from.id;
+
+    if (fileSendSessions.has(adminId)) {
+      const session = fileSendSessions.get(adminId);
+
+      if (session.step === "awaitingFile") {
+        const userId = session.userId;
+
+        try {
+          await ctx.api.sendMessage(
+            userId,
+            "Админ отправил тебе презентацию от тренера:"
+          );
+          await ctx.api.sendDocument(userId, ctx.message.document.file_id);
+          await ctx.reply(`✅ Файл отправлен пользователю ID: ${userId}`, {
+            reply_markup: adminMenu,
+          });
+
+          // (опционально) логируем в группу
+          try {
+            await ctx.api.sendMessage(
+              CONFIG.GROUP_ID,
+              `Админ @${ctx.from.username} отправил файл пользователю ID: ${userId}`
+            );
+          } catch (logError) {
+            console.error("Ошибка отправки лога в группу:", logError);
+            // Не мешаем админу — просто пишем в консоль
+          }
+        } catch (error) {
+          console.error("Ошибка отправки файла пользователю:", error);
+          await ctx.reply(
+            "⚠️ Не удалось отправить файл. Возможно, пользователь заблокировал бота или ID некорректен.",
+            {
+              reply_markup: adminMenu,
+            }
+          );
+        }
+
+        fileSendSessions.delete(adminId);
       }
     }
   });
